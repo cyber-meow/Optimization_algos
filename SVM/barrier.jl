@@ -8,7 +8,7 @@ function svmcentering(
   b = [-1.*ones(Y); zeros(Y)]
   w, z = copy(w), copy(z)
   x = [w; z]
-  f(w, z) = t*(norm(w)^2/2+C*ones(Y)⋅z)-sum(log.(Y.*(X*w)+z-1)+log.(z))
+  f(w, z) = t*(norm(w)^2/2+C*sum(z))-sum(log.(Y.*(X*w)+z-1)+log.(z))
   fx(x) = f(x[1: size(w, 1)], x[size(w, 1)+1: end])
   numsteps = 0
   while true
@@ -34,6 +34,8 @@ function svmcentering(
   w, z, numsteps
 end
 
+# This implementation is deterministic for illustration purpose.
+# In practice we may want to use random starting points.
 function svmbarrier(
     X::AbstractMatrix, Y::AbstractVector, C::Real, ϵ::Real;
     t0::Real=1., μ::Real=100., α::Real=0.01, β::Real=0.05)
