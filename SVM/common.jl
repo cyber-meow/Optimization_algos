@@ -10,7 +10,8 @@ function plotclouds(cloudA, cloudB)
   scatter!(cloudB[1,:], cloudB[2,:], label="1")
 end
 
-function errorrate(classA::MvNormal, classB::MvNormal,
+function errorrate(classA::MvNormal,
+                   classB::MvNormal,
                    w::AbstractVector, n::Integer)
   testA = rand(classA, n)
   testB = rand(classB, n)
@@ -25,7 +26,8 @@ function drawborder(f)
   contour!(xs, ys, f, levels=[0], colorbar=false, ls=:dash)
 end
 
-function plotdualitygap(m::Integer, μ::Real,
+function plotdualitygap(m::Integer,
+                        μ::Real,
                         numstepsarray::AbstractVector{T}) where T<:Integer
   dualgaps = [m/μ^i for i=0:length(numstepsarray)]
   numstepssumsarray = reduce(

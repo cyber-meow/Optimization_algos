@@ -1,9 +1,11 @@
 # A SVM solver based on the dual coordinate descent method.
 
 # The naif implementation.
-function svm_dualcoordinatedescent(
-    X::AbstractMatrix, Y::AbstractVector,
-    C::Real, ϵ::Real; maxiter::Integer=10000)
+function svm_dualcoordinatedescent(X::AbstractMatrix,
+                                   Y::AbstractVector,
+                                   C::Real,
+                                   ϵ::Real;
+                                   maxiter::Integer=10000)
   α = C/2*ones(Y)
   w = X'*(Y.*α)
   Q = Diagonal(Y)*X*X'*Diagonal(Y)
@@ -30,10 +32,12 @@ function svm_dualcoordinatedescent(
   wmin, α, dualitygaps
 end
 
-# Add random permutation of indices inside each outer iteration
-# and a more efficient way to compute the gradient of each univariate function.
-function svm_dualcoordinatedescentopt(
-    X::AbstractMatrix, Y::AbstractVector, C::Integer, iter::Integer)
+# Add random permutation of indices inside each outer iteration and a
+# more efficient way to compute the gradient of each univariate function.
+function svm_dualcoordinatedescentopt(X::AbstractMatrix,
+                                      Y::AbstractVector,
+                                      C::Integer,
+                                      iter::Integer)
   α = C/2*ones(Y)
   w = X'*(Y.*α)
   Qdiag = sum(X.^2, 2)

@@ -1,55 +1,84 @@
-# Solve the SVM classification problem using the barrier method.
+# Solves the SVM classification problem using the barrier method.
 
-function svmcentering(
-    X::AbstractMatrix, Y::AbstractVector, C::Real,
-    w::AbstractVector, z::AbstractVector, t::Real;
-    ϵ::Real=1e-10, α::Real=0.01, β::Real=0.05)
+# The main function.
+# This implementation is deterministic for illustration purpose.
+# In practice we may want to use random starting point.
+function svmbarrier(X::AbstractMatrix,
+                    Y::AbstractVector,
+                    C::Real,
+                    ϵ::Real;
+                    t0::Real=1., 
+                    μ::Real=100.,
+                    α::Real=0.01, β::Real=0.05)
+  w = zeros(size(X, 2))
+  z = ones(Y)*2
+  x0 = [w; z]
   A = [-Y.*X (-eye(size(Y, 1))); zeros(X) (-eye(size(Y, 1)))]
   b = [-1.*ones(Y); zeros(Y)]
-  w, z = copy(w), copy(z)
-  x = [w; z]
-  f(w, z) = t*(norm(w)^2/2+C*sum(z))-sum(log.(Y.*(X*w)+z-1)+log.(z))
-  fx(x) = f(x[1: size(w, 1)], x[size(w, 1)+1: end])
+  wsize = size(w, 1)
+  f(x) = sum(x[1: wsize].^2)/2 + C*sum(x[wsize+1: end])
+  ∇f(x) = [x[1: size(w, 1)]; C*ones(Y)]
+  Hf(x) = Diagonal([ones(wsize); zeros(Y)])
+  x, αdual, numstepsarray = barriermethod(
+    f, ∇f, Hf, A, b, x0; ϵ=ϵ, t0=t0, μ=μ, α=α, β=β)
+  x[1: wsize], αdual[1: size(Y, 1)], numstepsarray
+end
+
+# Implements the barrier method given the objective function and its
+# first and second derivatives.
+# The problem is supposed to have a linear constraint Ax ≤ b.
+function barriermethod(f, ∇f, Hf,
+                       A::AbstractMatrix,
+                       b::AbstractVector,
+                       x0::AbstractVector;
+                       ϵ::Real=1e-3,
+                       t0::Real=1.,
+                       μ::Real=100.,
+                       α::Real=0.01, β::Real=0.05)
+  (all(A*x0.<b)
+   || throw(DomainError("x0 must be strictly feasible.")))
+  m = float(size(Y, 1))
+  x, t = x0, t0
+  numstepsarray::Vector{Int} = []
+  while true
+    x, numsteps = centeringstep(f, ∇f, Hf, A, b, x, t; α=α, β=β)
+    push!(numstepsarray, numsteps)
+    m/t < ϵ && break
+    t *= μ
+  end
+  αdual = 1./(t*(b-A*x))
+  x, αdual, numstepsarray
+end
+
+# Carries out a single centering step of the barrier method.
+# The problem is supposed to have a linear constraint Ax ≤ b.
+function centeringstep(f, ∇f, Hf,
+                       A::AbstractMatrix,
+                       b::AbstractVector,
+                       x0::AbstractVector,
+                       t::Real;
+                       ϵ::Real=1e-8,
+                       α::Real=0.01, β::Real=0.05)
+  x = copy(x0)
   numsteps = 0
+  obj(x) = t*f(x)-sum(log.(b-A*x))
   while true
     d = 1./(b-A*x)
-    ∇ = t*[w; C*ones(Y)]+A'*d
-    H = t*Diagonal([ones(w); zeros(Y)])+A'*Diagonal(d)^2*A
+    ∇ = t*∇f(x)+A'*d
+    H = t*Hf(x)+A'*Diagonal(d)^2*A
     Δxnt = -H\∇
     λ² = -∇⋅Δxnt
     λ²/2 < ϵ && break
     tbacktrace = 1
     xtest = x + tbacktrace*Δxnt
-    while(any(A*xtest .≥ b) || fx(xtest) > fx(x)-tbacktrace*α*λ²)
+    while(any(A*xtest .≥ b) || obj(xtest) > obj(x)-tbacktrace*α*λ²)
       tbacktrace *= β
       xtest = x + tbacktrace*Δxnt
     end
-    assert(fx(xtest) <= fx(x))
     # numeric limit
-    fx(xtest) == fx(x) && break
+    obj(xtest) == obj(x) && break
     x = xtest
-    w, z = x[1: size(w, 1)], x[size(w, 1)+1: end]
     numsteps += 1
   end
-  w, z, numsteps
-end
-
-# This implementation is deterministic for illustration purpose.
-# In practice we may want to use random starting points.
-function svmbarrier(
-    X::AbstractMatrix, Y::AbstractVector, C::Real, ϵ::Real;
-    t0::Real=1., μ::Real=100., α::Real=0.01, β::Real=0.05)
-  w = zeros(size(X, 2))
-  z = ones(Y)*2
-  m = float(2*size(Y, 1))
-  t = t0
-  numstepsarray::Vector{Int} = []
-  while true
-    w, z, numsteps = svmcentering(X, Y, C, w, z, t; α=α, β=β)
-    push!(numstepsarray, numsteps)
-    m/t < ϵ && break
-    t *= μ
-  end
-  αdual = 1./(t*Y.*X*w+z-1)
-  w, αdual, numstepsarray
+  x, numsteps
 end
