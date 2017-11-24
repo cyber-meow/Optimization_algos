@@ -49,24 +49,28 @@ function accpm(f, ∇f,
                A::AbstractMatrix,
                b::AbstractVector, 
                x0::AbstractVector,
-               ϵ::Real;
+               ϵ::Real,
+               droppingstrategy::Symbol=:None;
                α::Real=0.01, β::Real=0.05)
   (all(A*x0.<b)
    || throw(DomainError("x0 must be strictly feasible.")))
   x = copy(x0)
-  m = size(b, 1)
+  ms = [size(A, 1)]
   u, l = f(x), -Inf
   optdistances::Vector{Float64} = []
   while true
     x, H = polytope_analcenter(A, b, x, 1e-6; α=α, β=β)
     ∇, fx = ∇f(x), f(x)
     u = min(u, fx)
-    l = max(l, fx - m*√(∇'*(H\∇)))
+    l = max(l, fx - ms[end]*√(∇'*(H\∇)))
     push!(optdistances, u - l)
     u - l < ϵ && break
+    if droppingstrategy == :DropRedundant
+      A, b = dropconstraintredundant(A, B, x, H)
+    end
     A, b = [A; ∇'], [b; ∇'*x]
     x = nextstartpoint(A, b, x)
-    m += 1
+    push!(ms, size(A, 1))
   end
   x, optdistances
 end
@@ -85,4 +89,15 @@ function nextstartpoint(A::AbstractMatrix,
   lowerbound = max.(0, -(A*a)[1: end-1])
   δ = minimum(upperbound./lowerbound)
   x - δ*a/2
+end
+
+function dropconstraintredundant(A::AbstractMatrix,
+                                 b::AbstractVector,
+                                 x::AbstractVector,
+                                 H::AbstractMatrix)
+  m = size(A, 1)
+  Hinv = inv(H)
+  relevemeasure = (b-A*x)/.[A*Hinv[i, :]⋅A[i, :] for i=1:m]
+  tokeep = relevemeasure .< m
+  A[tokeep, :], b[tokeep, :]
 end
