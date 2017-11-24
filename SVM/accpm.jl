@@ -7,7 +7,8 @@
 function svmaccpm(X::AbstractMatrix,
                   Y::AbstractVector,
                   C::Real,
-                  ϵ::Real;
+                  ϵ::Real,
+                  droppingstrategy::Symbol=:None;
                   α::Real=0.01, β::Real=0.05)
   w = zeros(size(X, 2))
   z = ones(Y)*2
@@ -16,8 +17,9 @@ function svmaccpm(X::AbstractMatrix,
   wsize = size(w, 1)
   f(x) = sum(x[1: wsize].^2)/2 + C*sum(x[wsize+1: end])
   ∇f(x) = [x[1: size(w, 1)]; C*ones(Y)]
-  x, optdistances = accpm(f, ∇f, A, b, x0, ϵ; α=α, β=β)
-  x[1: wsize], optdistances
+  x, optdistances, numconstraints = accpm(
+    f, ∇f, A, b, x0, ϵ, droppingstrategy; α=α, β=β)
+  x[1: wsize], optdistances, numconstraints
 end
 
 # Computes the initial polyhedron for the SVM problem with some given
@@ -35,7 +37,7 @@ function initialpolytope(X::AbstractMatrix,
   zupper = objvalue/C
   A = [-Y.*X (-eye(size(Y, 1)));
        zeros(X) (-eye(size(Y, 1)));
-       eye(size(w, 1)) zeros(X)';
+       -eye(size(w, 1)) zeros(X)';
        eye(size(w, 1)+size(z, 1));]
   b = [-1.*ones(Y); zeros(Y);
        fill(wupper, 2*size(w, 1)); fill(zupper, size(z))]
@@ -54,6 +56,10 @@ function accpm(f, ∇f,
                α::Real=0.01, β::Real=0.05)
   (all(A*x0.<b)
    || throw(DomainError("x0 must be strictly feasible.")))
+  (droppingstrategy in [:None, :DropRedundant, :KeepConstant]
+   || throw(ArgumentError(
+        "droppingstrategy must be one of the three:"
+        * ":None, :DropRedundant or :KeepConstant.")))
   x = copy(x0)
   ms = [size(A, 1)]
   u, l = f(x), -Inf
@@ -65,14 +71,14 @@ function accpm(f, ∇f,
     l = max(l, fx - ms[end]*√(∇'*(H\∇)))
     push!(optdistances, u - l)
     u - l < ϵ && break
-    if droppingstrategy == :DropRedundant
-      A, b = dropconstraintredundant(A, B, x, H)
+    if droppingstrategy ≠ :None
+      A, b = dropconstraint(A, b, x, H, droppingstrategy)
     end
     A, b = [A; ∇'], [b; ∇'*x]
     x = nextstartpoint(A, b, x)
     push!(ms, size(A, 1))
   end
-  x, optdistances
+  x, optdistances, ms
 end
 
 # In the ACCPM algorithm, at the end of each iteration, the vector `x`
@@ -91,13 +97,30 @@ function nextstartpoint(A::AbstractMatrix,
   x - δ*a/2
 end
 
-function dropconstraintredundant(A::AbstractMatrix,
-                                 b::AbstractVector,
-                                 x::AbstractVector,
-                                 H::AbstractMatrix)
+# Drop the constraints according to different strategies.
+#
+# :DropRedundant:
+#   Guarantees not to change the polytope in question.
+#
+# :KeepConstant:
+#   Keeps a fixed number of constraints which are the most relevant.
+#   Here I choose to keep 3n constraints where n is the variable dimension.
+#   However, we shouldn't end up with something that doesn't satisfy the
+#   initial constraints, so this implementation can have bugs in some
+#   particular cases.
+function dropconstraint(A::AbstractMatrix,
+                        b::AbstractVector,
+                        x::AbstractVector,
+                        H::AbstractMatrix,
+                        droppingstrategy::Symbol)
   m = size(A, 1)
   Hinv = inv(H)
-  relevemeasure = (b-A*x)/.[A*Hinv[i, :]⋅A[i, :] for i=1:m]
-  tokeep = relevemeasure .< m
-  A[tokeep, :], b[tokeep, :]
+  relevemeasure = (b-A*x)./[√((A*Hinv)[i, :]⋅A[i, :]) for i=1:m]
+  if droppingstrategy == :DropRedundant
+    tokeep = relevemeasure .< m
+  end
+  if droppingstrategy == :KeepConstant
+    tokeep = sortperm(relevemeasure)[1: min(3*size(A, 2), end)]
+  end
+  A[tokeep, :], b[tokeep]
 end
